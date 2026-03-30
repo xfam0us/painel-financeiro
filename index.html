@@ -277,7 +277,7 @@ svg.donut{transform:rotate(-90deg);}
   <div class="lock-box">
     <span class="lock-icon">🔐</span>
     <div class="lock-title">Painel <span>Financeiro</span></div>
-    <div class="lock-sub">Digite sua senha para acessar</div>
+    <div class="lock-sub">Digite sua senha para acessar.<br><span style="font-size:11px;color:var(--accent)">Primeira vez? Digite qualquer senha para criá-la.</span></div>
     <div class="lock-input-wrap">
       <input class="lock-input" type="password" id="pwInput" placeholder="••••••••" onkeydown="if(event.key==='Enter')tryLogin()">
       <button class="lock-eye" id="eyeBtn" onclick="toggleEye()">👁️</button>
@@ -557,56 +557,91 @@ let modalTab = 'receita';
 let fails = 0, blocked = false;
 
 // ═══════════════════════════════════════════════════════════════
-// PASSWORD
+// PASSWORD — salva no Firebase, funciona em qualquer dispositivo
 // ═══════════════════════════════════════════════════════════════
 function h(s){ let v=0; for(let i=0;i<s.length;i++) v=(Math.imul(31,v)+s.charCodeAt(i))|0; return v.toString(36); }
-function storedOk(inp){ const sh=localStorage.getItem('fp_h'); return sh?h(inp)===sh:inp==='senha123'; }
+
+// Carrega a senha do Firebase (doc separado para não precisar de login)
+async function loadPwDoc(){
+  try{
+    const snap = await getDoc(doc(db,'painel','_senha'));
+    return snap.exists() ? snap.data() : null;
+  } catch(e){ return null; }
+}
+
+async function savePwDoc(hashed){
+  try{ await setDoc(doc(db,'painel','_senha'),{h:hashed}); } catch(e){}
+}
 
 function tryLogin(){
   if(blocked)return;
-  const pw=document.getElementById('pwInput').value;
-  if(storedOk(pw)){
-    fails=0;
-    document.getElementById('lockErr').textContent='☁️ Carregando dados...';
-    document.getElementById('lockErr').style.color='var(--accent2)';
-    loadCloud().then(()=>{
-      document.getElementById('lockScreen').style.display='none';
-      document.getElementById('appContent').style.display='block';
-      initApp();
-    }).catch(()=>{
-      _cache={};
-      document.getElementById('lockScreen').style.display='none';
-      document.getElementById('appContent').style.display='block';
-      initApp();
-    });
-  } else {
-    fails++;
-    const inp=document.getElementById('pwInput');
-    inp.value=''; inp.classList.add('shake');
-    setTimeout(()=>inp.classList.remove('shake'),400);
-    const left=5-fails;
-    if(fails>=5){
-      blocked=true;
-      document.getElementById('lockErr').textContent='🚫 Bloqueado por 30s.';
-      document.getElementById('lockAtt').textContent='';
-      setTimeout(()=>{blocked=false;fails=0;document.getElementById('lockErr').textContent='';},30000);
+  const pw = document.getElementById('pwInput').value;
+  if(!pw){ document.getElementById('lockErr').textContent='Digite sua senha.'; return; }
+
+  document.getElementById('lockErr').textContent='☁️ Verificando...';
+  document.getElementById('lockErr').style.color='var(--accent2)';
+
+  loadPwDoc().then(pwDoc => {
+    let ok = false;
+    if(!pwDoc){
+      // Primeira vez — qualquer senha vira a senha oficial
+      ok = pw.length >= 4;
+      if(ok) savePwDoc(h(pw));
     } else {
-      document.getElementById('lockErr').textContent='❌ Senha incorreta.';
-      document.getElementById('lockAtt').textContent=left+' tentativa'+(left!==1?'s':'')+' restante'+(left!==1?'s':'');
+      ok = h(pw) === pwDoc.h;
     }
-  }
+
+    if(ok){
+      fails=0;
+      document.getElementById('lockErr').textContent='☁️ Carregando dados...';
+      loadCloud().then(()=>{
+        // se era primeira vez, mostra aviso
+        if(!pwDoc){
+          document.getElementById('lockAtt').textContent='';
+        }
+        document.getElementById('lockScreen').style.display='none';
+        document.getElementById('appContent').style.display='block';
+        initApp();
+      }).catch(()=>{
+        _cache={};
+        document.getElementById('lockScreen').style.display='none';
+        document.getElementById('appContent').style.display='block';
+        initApp();
+      });
+    } else {
+      fails++;
+      const inp=document.getElementById('pwInput');
+      inp.value=''; inp.classList.add('shake');
+      setTimeout(()=>inp.classList.remove('shake'),400);
+      const left=5-fails;
+      if(fails>=5){
+        blocked=true;
+        document.getElementById('lockErr').textContent='🚫 Bloqueado por 30s.';
+        document.getElementById('lockErr').style.color='var(--red)';
+        document.getElementById('lockAtt').textContent='';
+        setTimeout(()=>{blocked=false;fails=0;document.getElementById('lockErr').textContent='';},30000);
+      } else {
+        document.getElementById('lockErr').textContent='❌ Senha incorreta.';
+        document.getElementById('lockErr').style.color='var(--red)';
+        document.getElementById('lockAtt').textContent=left+' tentativa'+(left!==1?'s':'')+' restante'+(left!==1?'s':'');
+      }
+    }
+  });
 }
+
 function toggleEye(){ const i=document.getElementById('pwInput'); const s=i.type==='password'; i.type=s?'text':'password'; document.getElementById('eyeBtn').textContent=s?'🙈':'👁️'; }
-function changePassword(){
+
+async function changePassword(){
   const p1=document.getElementById('np1').value, p2=document.getElementById('np2').value;
   const el=document.getElementById('cpErr');
   if(!p1||p1.length<4){el.className='lock-error';el.textContent='Mínimo 4 caracteres.';return;}
   if(p1!==p2){el.className='lock-error';el.textContent='Senhas não coincidem.';return;}
-  localStorage.setItem('fp_h',h(p1));
-  el.className='lock-ok';el.textContent='✅ Senha salva!';
+  await savePwDoc(h(p1));
+  el.className='lock-ok';el.textContent='✅ Senha salva na nuvem!';
   document.getElementById('np1').value=''; document.getElementById('np2').value='';
   setTimeout(()=>el.textContent='',3000);
 }
+
 function logout(){ document.getElementById('appContent').style.display='none'; document.getElementById('lockScreen').style.display='flex'; document.getElementById('pwInput').value=''; document.getElementById('lockErr').textContent=''; document.getElementById('lockAtt').textContent=''; }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1323,9 +1358,8 @@ async function preloadDataIfEmpty(){
   await saveCloud();
 }
 
-if(!localStorage.getItem('fp_h')){
-  document.getElementById('lockAtt').textContent='Senha padrão: senha123 (altere abaixo 👆)';
-}
+// ── Boot ──────────────────────────────────────────────────────
+// Senha salva no Firebase — funciona igual em todos os dispositivos
 
 // Expose all functions called from HTML onclick attributes
 window.tryLogin       = tryLogin;
