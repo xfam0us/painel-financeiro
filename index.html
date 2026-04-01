@@ -61,6 +61,19 @@ header{display:flex;justify-content:space-between;align-items:flex-start;margin-
 /* ALERTS */
 .alert-banner{display:none;background:rgba(251,146,60,.1);border:1px solid var(--orange);border-radius:12px;padding:12px 16px;margin-bottom:20px;font-size:13px;color:var(--orange);}
 .alert-banner.show{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;}
+.venc-banner{display:none;background:rgba(168,85,247,.08);border:1px solid #a855f7;border-radius:12px;padding:14px 16px;margin-bottom:16px;}
+.venc-banner.show{display:block;}
+.venc-title{color:#a855f7;font-weight:600;margin-bottom:10px;font-size:13px;}
+.venc-item{display:flex;align-items:center;gap:10px;padding:9px 12px;background:rgba(168,85,247,.06);border-radius:9px;margin-bottom:6px;flex-wrap:wrap;}
+.venc-info{flex:1;min-width:120px;}
+.venc-name{font-size:13px;font-weight:500;color:var(--text);}
+.venc-sub{font-size:11px;color:var(--muted);margin-top:1px;}
+.venc-inp{background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:6px 10px;color:var(--text);font-family:'DM Sans',system-ui,sans-serif;font-size:12px;outline:none;width:110px;}
+.venc-inp:focus{border-color:var(--accent);}
+.venc-btn{background:var(--accent);color:#0d0f14;border:none;border-radius:7px;padding:7px 14px;font-family:'DM Sans',system-ui,sans-serif;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;transition:opacity .2s;}
+.venc-btn:hover{opacity:.85;}
+.venc-skip{background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;padding:4px 8px;transition:color .2s;}
+.venc-skip:hover{color:var(--red);}
 
 /* TOP CARDS */
 .top-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:28px;}
@@ -333,6 +346,7 @@ svg.donut{transform:rotate(-90deg);}
     </div>
   </header>
 
+  <div class="venc-banner" id="vencBanner"></div>
   <div class="alert-banner" id="alertBanner"></div>
 
   <div id="topCards" class="top-cards"></div>
@@ -1020,6 +1034,106 @@ function checkAlerts(des){
   } else {
     banner.classList.remove('show');
   }
+
+  // ── Notificação de vencimento (5 dias antes) ──
+  checkVencimentos();
+}
+
+function checkVencimentos(){
+  const recs = getRec();
+  const hoje = new Date();
+  const diaHoje = hoje.getDate();
+  const mesKey = hoje.getFullYear()+'-'+hoje.getMonth();
+  const AC = getAC();
+
+  // recorrentes com valor variável = os que têm variavel:true OU são cartões
+  const cartaoCats = ['nubank','santander','rp','bb_10','bb_16','bb_26','bb_28'];
+
+  const proximos = recs.filter(r => {
+    if(!r.dia) return false;
+    const diasAteVenc = r.dia - diaHoje;
+    return diasAteVenc >= 0 && diasAteVenc <= 5;
+  });
+
+  const vencBanner = document.getElementById('vencBanner');
+  if(!proximos.length){ vencBanner.classList.remove('show'); return; }
+
+  // verifica quais já foram lançados nesse mês
+  const entries = getE();
+  const vencItems = proximos.map(r => {
+    const c = AC[r.cat]||{label:r.cat,icon:'•',color:'#888'};
+    const diasAteVenc = r.dia - diaHoje;
+    const jaLancado = entries.some(e => e.recId===r.id || (e.desc===r.desc && e.cat===r.cat && e.tipo===r.tipo));
+    const isVariavel = cartaoCats.includes(r.cat) || r.variavel;
+    const label = diasAteVenc===0 ? '🔴 Vence HOJE!' : `⏰ Vence em ${diasAteVenc} dia${diasAteVenc!==1?'s':''}`;
+
+    if(jaLancado && !isVariavel) return ''; // já lançado e fixo, ignora
+
+    return `<div class="venc-item">
+      <div class="tx-dot" style="background:${c.color}"></div>
+      <div class="venc-info">
+        <div class="venc-name">${c.icon} ${r.desc}</div>
+        <div class="venc-sub">${label} · dia ${r.dia}${jaLancado?' · já lançado este mês':''}</div>
+      </div>
+      ${isVariavel ? `
+        <input class="venc-inp" type="number" id="venc_${r.id}" placeholder="Novo valor" step="0.01" min="0">
+        <button class="venc-btn" onclick="confirmarVencimento('${r.id}')">✅ Confirmar</button>
+      ` : `
+        <span style="font-size:12px;font-weight:600;color:var(--orange)">${fmt(r.valor)}</span>
+        ${!jaLancado?`<button class="venc-btn" onclick="lancarRecorrente('${r.id}')">Lançar</button>`:'<span style="font-size:11px;color:var(--green)">✅ Ok</span>'}
+      `}
+      <button class="venc-skip" onclick="dispensarVenc('${r.id}')" title="Dispensar">✕</button>
+    </div>`;
+  }).filter(Boolean).join('');
+
+  if(!vencItems){ vencBanner.classList.remove('show'); return; }
+
+  vencBanner.innerHTML = `<div class="venc-title">🔔 Vencimentos próximos — atualize os valores antes de lançar</div>${vencItems}`;
+  vencBanner.classList.add('show');
+}
+
+async function confirmarVencimento(recId){
+  const inp = document.getElementById('venc_'+recId);
+  const valor = parseFloat(inp?.value);
+  if(!valor||valor<=0){ alert('Digite o valor da fatura.'); return; }
+  const recs = getRec();
+  const r = recs.find(x=>x.id===recId);
+  if(!r) return;
+  const hoje = new Date();
+  const dataStr = hoje.getFullYear()+'-'+(hoje.getMonth()+1).toString().padStart(2,'0')+'-'+(r.dia||hoje.getDate()).toString().padStart(2,'0');
+  const key = hoje.getFullYear()+'-'+hoje.getMonth();
+  if(!_cache.entries) _cache.entries={};
+  if(!_cache.entries[key]) _cache.entries[key]=[];
+  _cache.entries[key].push({id:Date.now(),desc:r.desc,valor,cat:r.cat,tipo:r.tipo,data:dataStr,recId:r.id,auto:true});
+  await saveCloud();
+  render();
+}
+
+async function lancarRecorrente(recId){
+  const recs = getRec();
+  const r = recs.find(x=>x.id===recId);
+  if(!r) return;
+  const hoje = new Date();
+  const dataStr = hoje.getFullYear()+'-'+(hoje.getMonth()+1).toString().padStart(2,'0')+'-'+(r.dia||hoje.getDate()).toString().padStart(2,'0');
+  const key = hoje.getFullYear()+'-'+hoje.getMonth();
+  if(!_cache.entries) _cache.entries={};
+  if(!_cache.entries[key]) _cache.entries[key]=[];
+  _cache.entries[key].push({id:Date.now(),desc:r.desc,valor:r.valor,cat:r.cat,tipo:r.tipo,data:dataStr,recId:r.id,auto:true});
+  await saveCloud();
+  render();
+}
+
+function dispensarVenc(recId){
+  // esconde só esse item visualmente
+  const banner = document.getElementById('vencBanner');
+  const items = banner.querySelectorAll('.venc-item');
+  items.forEach(item => {
+    if(item.querySelector(`[id="venc_${recId}"]`) || item.innerHTML.includes(`'${recId}'`)){
+      item.style.display='none';
+    }
+  });
+  const remaining = [...items].filter(i=>i.style.display!=='none');
+  if(!remaining.length) banner.classList.remove('show');
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1299,7 +1413,7 @@ function renderRecModal(editId=null){
       <div class="tx-dot" style="background:${(AC[r.cat]||{}).color||'#888'}"></div>
       <div class="rec-info">
         <div class="rec-name">${r.desc}</div>
-        <div class="rec-meta">${(AC[r.cat]||{}).icon||''} ${(AC[r.cat]||{}).label||r.cat} · ${r.tipo}${r.dia?' · vence dia '+r.dia:''}</div>
+        <div class="rec-meta">${(AC[r.cat]||{}).icon||''} ${(AC[r.cat]||{}).label||r.cat} · ${r.tipo}${r.dia?' · vence dia '+r.dia:''}${r.variavel?' · 💳 valor variável':''}</div>
       </div>
       <div class="rec-amt ${r.tipo==='receita'?'r':'d'}">${fmt(r.valor)}</div>
       <button style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:13px;padding:3px 6px;transition:opacity .2s;" onclick="renderRecModal('${r.id}')" title="Editar">✏️</button>
@@ -1322,7 +1436,13 @@ function renderRecModal(editId=null){
         </div>
         <div class="field"><label>Categoria</label><select id="rCat">${catOpts('despesa')}</select></div>
         <div class="field"><label>Dia do mês (vencimento)</label><input type="number" id="rDia" placeholder="Ex: 5" min="1" max="31"></div>
-      </div>
+        <div class="field" style="justify-content:flex-end;">
+          <label style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" id="rVariavel" style="width:16px;height:16px;accent-color:var(--accent);">
+            <span style="font-size:12px;color:var(--muted)">Valor variável (ex: cartão)</span>
+          </label>
+        </div>
+        </div>
       <button class="btn-cat-add" onclick="addRec()">+ Adicionar Recorrente</button>
     </div>`;
 }
@@ -1344,9 +1464,10 @@ async function addRec(){
   const tipo=document.getElementById('rTipo').value;
   const cat=document.getElementById('rCat').value;
   const dia=parseInt(document.getElementById('rDia').value)||null;
+  const variavel=document.getElementById('rVariavel')?.checked||false;
   if(!desc||!valor||valor<=0){alert('Preencha todos os campos.');return;}
   const recs=getRec();
-  recs.push({id:'r_'+Date.now(),desc,valor,tipo,cat,dia});
+  recs.push({id:'r_'+Date.now(),desc,valor,tipo,cat,dia,variavel});
   await saveRec(recs); renderRecModal();
 }
 async function delRec(id){ await saveRec(getRec().filter(r=>r.id!==id)); renderRec(); }
@@ -1464,7 +1585,10 @@ async function preloadDataIfEmpty(){
 // Senha salva no Firebase — funciona igual em todos os dispositivos
 
 // Expose all functions called from HTML onclick attributes
-window.saveEditRec    = saveEditRec;
+window.confirmarVencimento = confirmarVencimento;
+window.lancarRecorrente   = lancarRecorrente;
+window.dispensarVenc      = dispensarVenc;
+window.saveEditRec        = saveEditRec;
 window.toggleRec      = toggleRec;
 window.tryLogin       = tryLogin;
 window.toggleEye      = toggleEye;
