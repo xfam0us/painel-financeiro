@@ -622,16 +622,17 @@ function tryLogin(){
     if(ok){
       fails=0;
       document.getElementById('lockErr').textContent='☁️ Carregando dados...';
-      loadCloud().then(()=>{
-        // se era primeira vez, mostra aviso
-        if(!pwDoc){
-          document.getElementById('lockAtt').textContent='';
-        }
+      const loadWithTimeout = Promise.race([
+        loadCloud(),
+        new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),8000))
+      ]);
+      loadWithTimeout.then(()=>{
+        if(!pwDoc) document.getElementById('lockAtt').textContent='';
         document.getElementById('lockScreen').style.display='none';
         document.getElementById('appContent').style.display='block';
         initApp();
       }).catch(()=>{
-        _cache={};
+        if(!_cache) _cache={};
         document.getElementById('lockScreen').style.display='none';
         document.getElementById('appContent').style.display='block';
         initApp();
@@ -676,13 +677,19 @@ function logout(){ document.getElementById('appContent').style.display='none'; d
 // APP INIT
 // ═══════════════════════════════════════════════════════════════
 async function initApp(){
-  await preloadDataIfEmpty();
-  await applyRecurring();
+  try{
+    await Promise.race([
+      (async()=>{ await preloadDataIfEmpty(); await applyRecurring(); })(),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),8000))
+    ]);
+  } catch(e){
+    console.warn('Firebase lento ou offline, usando cache local:', e);
+    if(!_cache) _cache={};
+  }
   switchTab('receita');
   document.getElementById('data').value=new Date().toISOString().split('T')[0];
   render();
-  // esconde o overlay de carregamento
-  const overlay = document.getElementById('loadingOverlay');
+  const overlay=document.getElementById('loadingOverlay');
   if(overlay) overlay.style.display='none';
 }
 
