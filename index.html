@@ -679,10 +679,17 @@ async function applyRecurring(){
   if(!_cache.entries) _cache.entries={};
   if(!_cache.entries[key]) _cache.entries[key]=[];
   let changed=false;
-  recs.forEach(r=>{
+  recs.forEach(r => {
     const alreadyExists=_cache.entries[key].some(e=>e.recId===r.id);
     if(!alreadyExists){
-      _cache.entries[key].push({id:Date.now()+Math.random(),desc:r.desc,valor:r.valor,cat:r.cat,tipo:r.tipo,data:today.toISOString().split('T')[0],recId:r.id,auto:true});
+      const dia = r.dia || hoje.getDate();
+      const diaStr = Math.min(dia, new Date(hoje.getFullYear(), hoje.getMonth()+1, 0).getDate());
+      const dataStr = hoje.getFullYear()+'-'+(hoje.getMonth()+1).toString().padStart(2,'0')+'-'+diaStr.toString().padStart(2,'0');
+      _cache.entries[key].push({
+        id: Date.now()+Math.random(),
+        desc: r.desc, valor: r.valor, cat: r.cat, tipo: r.tipo,
+        data: dataStr, recId: r.id, auto: true
+      });
       changed=true;
     }
   });
@@ -1238,7 +1245,10 @@ function renderRecModal(){
     <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Lançamentos recorrentes entram automaticamente todo mês quando você fizer login.</p>
     <div id="recModalList">${recs.length?recs.map(r=>`<div class="rec-item">
       <div class="tx-dot" style="background:${(AC[r.cat]||{}).color||'#888'}"></div>
-      <div class="rec-info"><div class="rec-name">${r.desc}</div><div class="rec-meta">${(AC[r.cat]||{}).icon||''} ${(AC[r.cat]||{}).label||r.cat} · ${r.tipo}</div></div>
+      <div class="rec-info">
+        <div class="rec-name">${r.desc}</div>
+        <div class="rec-meta">${(AC[r.cat]||{}).icon||''} ${(AC[r.cat]||{}).label||r.cat} · ${r.tipo}${r.dia?' · vence dia '+r.dia:''}</div>
+      </div>
       <div class="rec-amt ${r.tipo==='receita'?'r':'d'}">${fmt(r.valor)}</div>
       <button class="rec-del" onclick="delRecModal('${r.id}')">✕</button>
     </div>`).join(''):'<div style="font-size:12px;color:var(--muted);padding:12px 0">Nenhum recorrente cadastrado.</div>'}</div>
@@ -1253,6 +1263,7 @@ function renderRecModal(){
           </select>
         </div>
         <div class="field"><label>Categoria</label><select id="rCat">${catOpts('despesa')}</select></div>
+        <div class="field"><label>Dia do mês (vencimento)</label><input type="number" id="rDia" placeholder="Ex: 5" min="1" max="31"></div>
       </div>
       <button class="btn-cat-add" onclick="addRec()">+ Adicionar Recorrente</button>
     </div>`;
@@ -1262,9 +1273,10 @@ async function addRec(){
   const valor=parseFloat(document.getElementById('rValor').value);
   const tipo=document.getElementById('rTipo').value;
   const cat=document.getElementById('rCat').value;
+  const dia=parseInt(document.getElementById('rDia').value)||null;
   if(!desc||!valor||valor<=0){alert('Preencha todos os campos.');return;}
   const recs=getRec();
-  recs.push({id:'r_'+Date.now(),desc,valor,tipo,cat});
+  recs.push({id:'r_'+Date.now(),desc,valor,tipo,cat,dia});
   await saveRec(recs); renderRecModal();
 }
 async function delRec(id){ await saveRec(getRec().filter(r=>r.id!==id)); renderRec(); }
