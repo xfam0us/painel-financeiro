@@ -360,6 +360,11 @@ svg.donut{transform:rotate(-90deg);}
           <div class="field"><label>Categoria</label><select id="categoria"></select></div>
           <div class="field"><label>Data</label><input type="date" id="data"></div>
         </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surface);border-radius:9px;margin-bottom:10px;cursor:pointer;" onclick="toggleRec()">
+          <div id="recCheck" style="width:18px;height:18px;border-radius:5px;border:2px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .2s;"></div>
+          <span style="font-size:13px;color:var(--muted);flex:1;">🔁 Tornar recorrente (entra todo mês automaticamente)</span>
+          <input type="number" id="recDia" placeholder="Dia" min="1" max="31" style="width:70px;background:var(--card);border:1px solid var(--border);border-radius:7px;padding:5px 8px;color:var(--text);font-family:'DM Sans',system-ui,sans-serif;font-size:12px;outline:none;display:none;" onclick="event.stopPropagation()">
+        </div>
         <button class="btn-add rb" id="btnAdd" onclick="addEntry()">Adicionar Receita</button>
         <button class="btn-sec" onclick="openModal('cats')">⚙️ Gerenciar categorias</button>
         <button class="btn-sec" onclick="openModal('keywords')">🧠 Regras de categoria automática</button>
@@ -769,6 +774,17 @@ function setFilter(f,el){
   renderTx(getE());
 }
 
+let isRecorrente = false;
+function toggleRec(){
+  isRecorrente = !isRecorrente;
+  const check = document.getElementById('recCheck');
+  const diaInp = document.getElementById('recDia');
+  check.style.background = isRecorrente ? 'var(--accent)' : 'transparent';
+  check.style.borderColor = isRecorrente ? 'var(--accent)' : 'var(--border)';
+  check.innerHTML = isRecorrente ? '<svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="#0d0f14" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' : '';
+  diaInp.style.display = isRecorrente ? 'block' : 'none';
+}
+
 async function addEntry(){
   const desc=document.getElementById('desc').value.trim();
   const valor=parseFloat(document.getElementById('valor').value);
@@ -776,29 +792,43 @@ async function addEntry(){
   const data=document.getElementById('data').value || new Date().toISOString().split('T')[0];
   if(!desc||!valor||valor<=0){alert('Preencha descrição e valor.');return;}
 
-  // salva no mês correto baseado na DATA digitada, não no mês visível na tela
+  // salva no mês correto baseado na DATA digitada
   const dateParts = data.split('-');
   const entryYear = parseInt(dateParts[0]);
-  const entryMonth = parseInt(dateParts[1]) - 1; // 0-indexed
+  const entryMonth = parseInt(dateParts[1]) - 1;
   const entryKey = entryYear+'-'+entryMonth;
 
   const d = allData();
   if(!d[entryKey]) d[entryKey]=[];
-  d[entryKey].push({id:Date.now(),desc,valor,cat,tipo:curTab,data});
+  const newEntry = {id:Date.now(),desc,valor,cat,tipo:curTab,data};
+  if(isRecorrente) newEntry.auto = true;
+  d[entryKey].push(newEntry);
   if(!_cache.entries) _cache.entries={};
   _cache.entries = d;
+
+  // se marcou recorrente, salva também na lista de recorrentes
+  if(isRecorrente){
+    const dia = parseInt(document.getElementById('recDia').value) || parseInt(dateParts[2]) || null;
+    const recs = getRec();
+    const jaExiste = recs.some(r=>r.desc===desc && r.cat===cat && r.tipo===curTab);
+    if(!jaExiste){
+      recs.push({id:'r_'+Date.now(), desc, valor, tipo:curTab, cat, dia});
+      _cache.rec = recs;
+    }
+  }
+
   await saveCloud();
 
   document.getElementById('desc').value='';
   document.getElementById('valor').value='';
+  // reset recorrente
+  if(isRecorrente){ isRecorrente=false; toggleRec(); }
 
-  // se o mês do lançamento é diferente do mês visível, avisa o usuário
   const currentKey = curDate.getFullYear()+'-'+curDate.getMonth();
   if(entryKey !== currentKey){
     const mes = new Date(entryYear, entryMonth, 1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
     alert('✅ Lançamento salvo em '+mes.charAt(0).toUpperCase()+mes.slice(1)+'!');
   }
-
   render();
 }
 
@@ -1394,6 +1424,7 @@ async function preloadDataIfEmpty(){
 // Senha salva no Firebase — funciona igual em todos os dispositivos
 
 // Expose all functions called from HTML onclick attributes
+window.toggleRec       = toggleRec;
 window.tryLogin       = tryLogin;
 window.toggleEye      = toggleEye;
 window.changePassword = changePassword;
