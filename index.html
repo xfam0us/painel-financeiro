@@ -766,13 +766,32 @@ async function addEntry(){
   const desc=document.getElementById('desc').value.trim();
   const valor=parseFloat(document.getElementById('valor').value);
   const cat=document.getElementById('categoria').value;
-  const data=document.getElementById('data').value;
+  const data=document.getElementById('data').value || new Date().toISOString().split('T')[0];
   if(!desc||!valor||valor<=0){alert('Preencha descrição e valor.');return;}
-  const entries=getE();
-  entries.push({id:Date.now(),desc,valor,cat,tipo:curTab,data:data||new Date().toISOString().split('T')[0]});
-  await saveE(entries);
+
+  // salva no mês correto baseado na DATA digitada, não no mês visível na tela
+  const dateParts = data.split('-');
+  const entryYear = parseInt(dateParts[0]);
+  const entryMonth = parseInt(dateParts[1]) - 1; // 0-indexed
+  const entryKey = entryYear+'-'+entryMonth;
+
+  const d = allData();
+  if(!d[entryKey]) d[entryKey]=[];
+  d[entryKey].push({id:Date.now(),desc,valor,cat,tipo:curTab,data});
+  if(!_cache.entries) _cache.entries={};
+  _cache.entries = d;
+  await saveCloud();
+
   document.getElementById('desc').value='';
   document.getElementById('valor').value='';
+
+  // se o mês do lançamento é diferente do mês visível, avisa o usuário
+  const currentKey = curDate.getFullYear()+'-'+curDate.getMonth();
+  if(entryKey !== currentKey){
+    const mes = new Date(entryYear, entryMonth, 1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+    alert('✅ Lançamento salvo em '+mes.charAt(0).toUpperCase()+mes.slice(1)+'!');
+  }
+
   render();
 }
 
