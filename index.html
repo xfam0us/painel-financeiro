@@ -1267,21 +1267,49 @@ async function addKW(){
 async function delKW(id){ await saveKW(getKW().filter(k=>k.id!==id)); renderKWModal(); }
 
 // ── RECURRING ──
-function renderRecModal(){
+function renderRecModal(editId=null){
   const recs=getRec();
   const AC=getAC();
-  const catOpts=(tipo)=>Object.entries(tipo==='receita'?getIC():getEC()).map(([k,c])=>`<option value="${k}">${c.icon} ${c.label}</option>`).join('');
-  document.getElementById('modalBody').innerHTML=`
-    <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Lançamentos recorrentes entram automaticamente todo mês quando você fizer login.</p>
-    <div id="recModalList">${recs.length?recs.map(r=>`<div class="rec-item">
+  const catOpts=(tipo,selVal='')=>Object.entries(tipo==='receita'?getIC():getEC()).map(([k,c])=>`<option value="${k}" ${selVal===k?'selected':''}>${c.icon} ${c.label}</option>`).join('');
+
+  const recItems = recs.length ? recs.map(r=>{
+    const isEditing = editId===r.id;
+    if(isEditing){
+      return `<div class="rec-item" style="flex-direction:column;align-items:stretch;gap:10px;padding:14px;">
+        <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:2px">✏️ Editando: ${r.desc}</div>
+        <div class="form-grid" style="grid-template-columns:1fr 1fr;">
+          <div class="field"><label>Descrição</label><input type="text" id="eDesc" value="${r.desc}"></div>
+          <div class="field"><label>Valor (R$)</label><input type="number" id="eValor" value="${r.valor}" min="0" step="0.01"></div>
+          <div class="field"><label>Tipo</label>
+            <select id="eTipo" onchange="document.getElementById('eCat').innerHTML=(this.value==='receita'?'${catOpts('receita').replace(/'/g,"\\'")}':'${catOpts('despesa').replace(/'/g,"\\'")}')">
+              <option value="despesa" ${r.tipo==='despesa'?'selected':''}>Despesa</option>
+              <option value="receita" ${r.tipo==='receita'?'selected':''}>Receita</option>
+            </select>
+          </div>
+          <div class="field"><label>Categoria</label><select id="eCat">${catOpts(r.tipo,r.cat)}</select></div>
+          <div class="field"><label>Dia do mês</label><input type="number" id="eDia" value="${r.dia||''}" placeholder="Ex: 15" min="1" max="31"></div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn-cat-add" style="flex:1;background:var(--accent);color:#0d0f14;" onclick="saveEditRec('${r.id}')">✅ Salvar</button>
+          <button class="btn-cat-add" style="flex:1;background:var(--border);" onclick="renderRecModal()">Cancelar</button>
+        </div>
+      </div>`;
+    }
+    return `<div class="rec-item">
       <div class="tx-dot" style="background:${(AC[r.cat]||{}).color||'#888'}"></div>
       <div class="rec-info">
         <div class="rec-name">${r.desc}</div>
         <div class="rec-meta">${(AC[r.cat]||{}).icon||''} ${(AC[r.cat]||{}).label||r.cat} · ${r.tipo}${r.dia?' · vence dia '+r.dia:''}</div>
       </div>
       <div class="rec-amt ${r.tipo==='receita'?'r':'d'}">${fmt(r.valor)}</div>
+      <button style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:13px;padding:3px 6px;transition:opacity .2s;" onclick="renderRecModal('${r.id}')" title="Editar">✏️</button>
       <button class="rec-del" onclick="delRecModal('${r.id}')">✕</button>
-    </div>`).join(''):'<div style="font-size:12px;color:var(--muted);padding:12px 0">Nenhum recorrente cadastrado.</div>'}</div>
+    </div>`;
+  }).join('') : '<div style="font-size:12px;color:var(--muted);padding:12px 0">Nenhum recorrente cadastrado.</div>';
+
+  document.getElementById('modalBody').innerHTML=`
+    <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Lançamentos recorrentes entram automaticamente todo mês quando você fizer login.</p>
+    <div id="recModalList">${recItems}</div>
     <div class="add-cat-form" style="margin-top:14px">
       <div class="add-cat-title">+ Novo recorrente</div>
       <div class="form-grid">
@@ -1297,6 +1325,18 @@ function renderRecModal(){
       </div>
       <button class="btn-cat-add" onclick="addRec()">+ Adicionar Recorrente</button>
     </div>`;
+}
+
+async function saveEditRec(id){
+  const desc = document.getElementById('eDesc').value.trim();
+  const valor = parseFloat(document.getElementById('eValor').value);
+  const tipo = document.getElementById('eTipo').value;
+  const cat = document.getElementById('eCat').value;
+  const dia = parseInt(document.getElementById('eDia').value)||null;
+  if(!desc||!valor||valor<=0){alert('Preencha todos os campos.');return;}
+  const recs = getRec().map(r=> r.id===id ? {...r,desc,valor,tipo,cat,dia} : r);
+  await saveRec(recs);
+  renderRecModal();
 }
 async function addRec(){
   const desc=document.getElementById('rDesc').value.trim();
@@ -1424,7 +1464,8 @@ async function preloadDataIfEmpty(){
 // Senha salva no Firebase — funciona igual em todos os dispositivos
 
 // Expose all functions called from HTML onclick attributes
-window.toggleRec       = toggleRec;
+window.saveEditRec    = saveEditRec;
+window.toggleRec      = toggleRec;
 window.tryLogin       = tryLogin;
 window.toggleEye      = toggleEye;
 window.changePassword = changePassword;
